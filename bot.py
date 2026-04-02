@@ -28,7 +28,7 @@ BOT_TOKEN    = "8728597984:AAFsH9-XOdvYvucggIN_ivADwMaTERI-X-U"
 API_ID       = 26163553
 API_HASH     = "1ecd6d8b71cbda6f66aa7415947d4538"
 OWNER_ID     = 5540313415
-DOWNLOAD_API = "https://apis.prexzyvilla.site/download/ig2?url="
+DOWNLOAD_API = "https://apis.prexzyvilla.site/download/instagram?url="
 DB_PATH      = "users.db"
 SESSION_NAME = "igxdbot_session"
 
@@ -101,7 +101,14 @@ async def fetch_ig_info(url: str) -> dict | None:
                 if resp.status != 200:
                     return None
                 data = await resp.json(content_type=None)
-                return data if data.get("status") else None
+                if not data.get("status"):
+                    return None
+
+                result = data.get("data", {})
+                if "caption" in result:
+                    del result["caption"]
+
+                return result
     except Exception:
         return None
 
@@ -396,20 +403,20 @@ async def message_handler(event):
         await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
         return
 
-    media_type = data.get("type", "")
-    dl_data    = data.get("download", {})
+    is_video = data.get("isVideo", False)
+    media_urls = data.get("url", [])
+
+    if not media_urls:
+        await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
+        return
 
     try:
         # ── VIDEO ─────────────────────────────────────────────────────────────
-        if media_type == "video":
-            video_urls = dl_data.get("videos", [])
-            if not video_urls:
-                await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
-                return
+        if is_video:
             await status.edit("<b>✅ Media Downloaded</b>", parse_mode="html")
             await status.edit("<b>📤 Uploading Video . . .</b>", parse_mode="html")
             async with client.action(event.chat_id, "video"):
-                bio = await download_to_bytes(video_urls[0], "reel.mp4")
+                bio = await download_to_bytes(media_urls[0], "reel.mp4")
                 if not bio:
                     await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
                     return
@@ -423,16 +430,12 @@ async def message_handler(event):
             await status.delete()
 
         # ── PHOTO ─────────────────────────────────────────────────────────────
-        elif media_type == "photo":
-            image_urls = dl_data.get("images", [])
-            if not image_urls:
-                await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
-                return
+        else:
             await status.edit("<b>✅ Media Downloaded</b>", parse_mode="html")
             await status.edit("<b>📤 Uploading Photo . . .</b>", parse_mode="html")
             async with client.action(event.chat_id, "photo"):
-                if len(image_urls) == 1:
-                    bio = await download_to_bytes(image_urls[0], "photo.jpg")
+                if len(media_urls) == 1:
+                    bio = await download_to_bytes(media_urls[0], "photo.jpg")
                     if not bio:
                         await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
                         return
@@ -442,7 +445,7 @@ async def message_handler(event):
                     )
                 else:
                     files = []
-                    for i, url in enumerate(image_urls):
+                    for i, url in enumerate(media_urls):
                         bio = await download_to_bytes(url, f"photo_{i}.jpg")
                         if bio:
                             files.append(bio)
@@ -454,9 +457,6 @@ async def message_handler(event):
                         reply_to=event.id, force_document=False,
                     )
             await status.delete()
-
-        else:
-            await status.edit("<b>❌ Failed to fetch media!</b>", parse_mode="html")
 
     except Exception:
         try:
@@ -494,22 +494,22 @@ async def inline_handler(event):
         await _inline_no_result(qid)
         return
 
-    media_type = data.get("type", "")
-    dl_data    = data.get("download", {})
-    thumb      = data.get("thumbnail", "https://cdn-icons-png.flaticon.com/128/11820/11820224.png")
-    results    = []
+    is_video = data.get("isVideo", False)
+    media_urls = data.get("url", [])
+    results = []
 
-    if media_type == "video":
-        for i, url in enumerate(dl_data.get("videos", [])):
+    if is_video:
+        fixed_thumb = "https://cdn-icons-png.flaticon.com/128/11820/11820224.png"
+        for i, url in enumerate(media_urls):
             results.append({
                 "type": "video", "id": f"v_{i}",
                 "video_url": url, "mime_type": "video/mp4",
-                "thumbnail_url": thumb,
+                "thumbnail_url": fixed_thumb,
                 "title": "🎬 Reel Fetched Successfully",
                 "description": "Tap to send reel 🚀",
             })
-    elif media_type == "photo":
-        for i, url in enumerate(dl_data.get("images", [])):
+    else:
+        for i, url in enumerate(media_urls):
             results.append({
                 "type": "photo", "id": f"p_{i}",
                 "photo_url": url, "thumbnail_url": url,
